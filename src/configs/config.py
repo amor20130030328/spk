@@ -47,7 +47,7 @@ def str_to_bool(s: str) -> bool:
 class Config:
     """全局配置类，用于集中管理所有可调参数"""
 
-    max_connections = 16
+    max_connections = 8
 
     ACTOR_RESET_TIMEOUT_S: Final[float] = 3.0
 
@@ -88,6 +88,9 @@ class Config:
     asr_model = os.environ.get("asr_model", "qwen3_asr")
     fa_model = os.environ.get("fa_model", "qwen3_fa")
     debug_device_Id = os.environ.get("debug_device_Id", "amore")
+
+    # 是否保存音频文件到磁盘（用于调试），默认关闭
+    save_audio_to_file = str_to_bool(os.environ.get("SAVE_AUDIO_TO_FILE", "False"))
 
     vpr_dia_threshold = os.environ.get("vpr_dia_threshold", 0.58)  #
     vpr_cls_update_len = os.environ.get("vpr_cls_update_len", 0.58)  #

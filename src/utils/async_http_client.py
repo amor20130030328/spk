@@ -182,8 +182,8 @@ class AsyncHttpClient:
                     success = True
                     total_latency = time.time() - start_time
 
-                    # 记录成功的请求耗时
-                    logger.info(
+                    # 记录成功的请求耗时（使用 DEBUG 级别，避免刷屏）
+                    logger.debug(
                         f"[{api_type}] Success, "
                         f"latency={request_latency:.3f}s, "
                         f"total={total_latency:.3f}s, "

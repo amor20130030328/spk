@@ -221,10 +221,11 @@ class ClientSession:
                     start_time = time.time()
                     self._metrics.audioReceived += 1
                     try:
-                        #self.monitor_manager.save_bytes_to_file(message, "opus" if self.opus_actor else "pcm")
                         if self.opus_actor:
                             message = self.opus_actor.decode_opus(message, False)
-                            self.monitor_manager.save_bytes_to_file(message, "pcm")
+                            # 根据配置决定是否保存音频文件
+                            if config.save_audio_to_file:
+                                self.monitor_manager.save_bytes_to_file(message, "pcm")
                             self.logger.debug(f"opus decode cost: {time.time() - start_time:.3f},  {len(message)}")
                         data = np.frombuffer(message, dtype=np.int16)
                         async with self._wave_buffer_lock:
