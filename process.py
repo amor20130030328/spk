@@ -155,8 +155,14 @@ class SpeakerEngineProcess:
             websocket = AsyncIterableWebSocketAdapter(raw_websocket)
 
             initial_message = work_msg.text
-            if initial_message is None:
-                raise ValueError("initial message is None")
+            if initial_message is None or not initial_message.strip():
+                logger.error("Initial message is None or empty, closing connection")
+                await self._send_overload_and_close(
+                    raw_websocket,
+                    code=1002,
+                    reason="Invalid initial message"
+                )
+                return
 
             payload = json.loads(initial_message)
             request_id = payload.get("messageId", "")
