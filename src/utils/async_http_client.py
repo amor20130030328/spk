@@ -148,6 +148,7 @@ class AsyncHttpClient:
         for attempt in range(retry_times):
             try:
                 request_timeout = timeout if timeout else 5.0
+                attempt_start = time.time()
 
                 # 注意：使用 content 而不是 json，因为需要手动序列化来匹配原始实现
                 response = await self._client.post(
@@ -157,10 +158,13 @@ class AsyncHttpClient:
                     timeout=request_timeout,
                 )
 
+                request_latency = time.time() - attempt_start
+
                 # 检查 HTTP 状态码
                 if response.status_code != 200:
                     logger.warning(
                         f"HTTP {response.status_code} from {url}, "
+                        f"latency={request_latency:.3f}s, "
                         f"attempt {attempt + 1}/{retry_times}"
                     )
                     if attempt < retry_times - 1:
@@ -173,23 +177,34 @@ class AsyncHttpClient:
                 # 检查业务状态码
                 if result.get('result', {}).get('code') == '0':
                     success = True
-                    latency = time.time() - start_time
-                    # 记录成功的请求
+                    total_latency = time.time() - start_time
+
+                    # 记录成功的请求耗时
+                    logger.info(
+                        f"[HTTP Success] url={url}, "
+                        f"latency={request_latency:.3f}s, "
+                        f"total={total_latency:.3f}s, "
+                        f"attempt={attempt + 1}"
+                    )
+
                     collector = await _get_metrics_collector()
                     if collector:
-                        collector.record_request(url, latency, success=True)
+                        collector.record_request(url, total_latency, success=True)
                     return result['result']['content'][0]
                 else:
                     logger.warning(
-                        f"Business error from {url}: {result.get('result', {})}"
+                        f"Business error from {url}: {result.get('result', {})}, "
+                        f"latency={request_latency:.3f}s"
                     )
                     return None
 
             except httpx.TimeoutException as e:
                 last_error = e
                 is_timeout = True
+                request_latency = time.time() - attempt_start
                 logger.warning(
-                    f"Request timeout to {url}, "
+                    f"[HTTP Timeout] url={url}, "
+                    f"latency={request_latency:.3f}s, "
                     f"attempt {attempt + 1}/{retry_times}: {e}"
                 )
                 if attempt < retry_times - 1:
@@ -197,8 +212,10 @@ class AsyncHttpClient:
 
             except httpx.ConnectError as e:
                 last_error = e
+                request_latency = time.time() - attempt_start
                 logger.warning(
-                    f"Connection error to {url}, "
+                    f"[HTTP ConnectError] url={url}, "
+                    f"latency={request_latency:.3f}s, "
                     f"attempt {attempt + 1}/{retry_times}: {e}"
                 )
                 if attempt < retry_times - 1:
@@ -220,14 +237,16 @@ class AsyncHttpClient:
                 return None
 
         # 所有重试都失败，记录失败的请求
-        latency = time.time() - start_time
+        total_latency = time.time() - start_time
         collector = await _get_metrics_collector()
         if collector:
-            collector.record_request(url, latency, success=False, is_timeout=is_timeout)
+            collector.record_request(url, total_latency, success=False, is_timeout=is_timeout)
 
         logger.error(
-            f"All {retry_times} attempts failed for {url}, "
-            f"last error: {last_error}"
+            f"[HTTP Failed] url={url}, "
+            f"total_latency={total_latency:.3f}s, "
+            f"attempts={retry_times}, "
+            f"last_error={last_error}"
         )
         return None
 
