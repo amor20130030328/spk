@@ -40,17 +40,39 @@ class AsrMainProcess:
     async def run(self, frame, prev : str, vad_res):
         """异步版本的 ASR 处理"""
         try:
-            start_time = time.time()
+            overall_start = time.time()
+
+            # 1. 数据预处理
+            preprocess_start = time.time()
             frame = frame.astype(np.float32) / config.audio_normalization_factor
+            preprocess_time = time.time() - preprocess_start
+
+            # 2. HTTP 请求（包含等待信号量时间）
+            http_start = time.time()
             semaphore = self.session_manager.get_http_semaphore()
             result = await request_qwen3_asr(self.session_id, frame, prev, semaphore=semaphore)
-            infer_time = round(time.time() - start_time, 3)
+            http_time = time.time() - http_start
+
+            # 3. 后处理
             if result and "sentence" in result:
+                postprocess_start = time.time()
                 raw_text = result['sentence']
                 processed_text = processor.process(raw_text, text_lang="zh")
                 processed_text = self.itn_actor.normalize(processed_text)
+                postprocess_time = time.time() - postprocess_start
 
-                return self.__make_result(AsrResult(text=processed_text, isFinish=False, retType="partial"), vad_res, infer_time), processed_text
+                overall_time = time.time() - overall_start
+
+                # 详细耗时日志
+                self.logger.info(
+                    f"[ASR_TIMING] total={overall_time:.3f}s | "
+                    f"preprocess={preprocess_time:.3f}s | "
+                    f"http={http_time:.3f}s | "
+                    f"postprocess={postprocess_time:.3f}s | "
+                    f"text_len={len(processed_text)}"
+                )
+
+                return self.__make_result(AsrResult(text=processed_text, isFinish=False, retType="partial"), vad_res, overall_time), processed_text
         except Exception as e:
             self.logger.error(f"asr recognize fail {str(e)}")
         return None, ""

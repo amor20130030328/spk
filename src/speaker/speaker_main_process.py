@@ -64,6 +64,7 @@ class SpeakerMainProcess:
 
 
     async def run(self, wave_data, vad_res, asr):
+        overall_start = time.time()
         stop_asr_event: Optional[asyncio.Event] = None
         bg_asr_task: Optional[asyncio.Task] = None
         try:
@@ -71,6 +72,8 @@ class SpeakerMainProcess:
             timeout_r1 = 3
             MAX_TASK_ASR_RUN = 3
 
+            # 准备阶段
+            prepare_start = time.time()
             stop_asr_event = asyncio.Event()
 
             async def loop_task_asr(frame):
@@ -90,9 +93,14 @@ class SpeakerMainProcess:
             bg_asr_task = asyncio.create_task(loop_task_asr(wave_data), name="bg_loop_task_asr")
             wave_data = wave_data.astype(np.float32) / config.audio_normalization_factor
             wave_duration = wave_data.shape[0] * 1.0 / config.sample_rate
-            self.logger.info(f"run.Starting speaker regconized. {vad_res} {asr}  wave_duration = {wave_duration}")
             vad_start = str(vad_res.start / config.sample_rate)
+            prepare_time = time.time() - prepare_start
 
+            self.logger.info(f"run.Starting speaker regconized. {vad_res} {asr}  wave_duration = {wave_duration}")
+
+            # 并发启动 r1(FA) 和 r2(Omni)
+            r1_start = time.time()
+            r2_start = time.time()
 
             r1_task = asyncio.create_task(
                  self.fa_service.run(wave_data, vad_res),
@@ -107,16 +115,20 @@ class SpeakerMainProcess:
 
             r2_result: Optional[object] = None
             r2_ok = False
+            r2_time = 0.0
 
             # 2. 带超时获取 r2
             try:
                 r2_result = await asyncio.wait_for(r2_task, timeout=timeout_r2)
-                self.logger.info(f"r2_result = {r2_result}")
+                r2_time = time.time() - r2_start
+                self.logger.info(f"[SPEAKER_R2_OMNI] completed in {r2_time:.3f}s")
                 r2_ok = True
             except asyncio.TimeoutError:
-                self.logger.warning("run.r2(post_omni2) 执行超时")
+                r2_time = time.time() - r2_start
+                self.logger.warning(f"[SPEAKER_R2_OMNI] timeout after {r2_time:.3f}s")
             except Exception as e:
-                self.logger.error(f"run.r2(post_omni2) 执行异常", exc_info=True)
+                r2_time = time.time() - r2_start
+                self.logger.error(f"[SPEAKER_R2_OMNI] failed after {r2_time:.3f}s: {e}")
 
             selected: Optional[object] = None
             # 3. 优先走 r2
@@ -133,10 +145,12 @@ class SpeakerMainProcess:
                 self.logger.info("run.r2 不可用，降级等待 r1(post_omni1)")
 
             # 4. r2 不可用，处理 r1
+            r1_time = 0.0
             if selected is None:
                 try:
                     r1_result = await asyncio.wait_for(r1_task, timeout=timeout_r1)
-                    self.logger.info(f"r1_result = {r1_result}")
+                    r1_time = time.time() - r1_start
+                    self.logger.info(f"[SPEAKER_R1_FA] completed in {r1_time:.3f}s")
                     if r1_result is not None and str(r1_result).strip():
                         selected = r1_result
                         self.logger.info("run.成功使用 r1(post_omni1) 降级结果")
@@ -144,29 +158,38 @@ class SpeakerMainProcess:
                     else:
                         self.logger.warning("run.r1(post_omni1) 结果为空，无可用结果")
                 except asyncio.TimeoutError:
-                    self.logger.error("run.r1(post_omni1) 执行超时")
+                    r1_time = time.time() - r1_start
+                    self.logger.error(f"[SPEAKER_R1_FA] timeout after {r1_time:.3f}s")
                 except asyncio.CancelledError:
                     self.logger.warning("run.r1(post_omni1) 任务已被取消")
                 except Exception as e:
-                    self.logger.error(f"run.r1(post_omni1) 执行异常", exc_info=True)
+                    r1_time = time.time() - r1_start
+                    self.logger.error(f"[SPEAKER_R1_FA] failed after {r1_time:.3f}s: {e}")
 
             if selected is None or "segments" not in selected:
                 return None, ""
 
             omni_result = selected
             self.logger.info(f"run.omni speaker omni_result. {omni_result}")
+
+            # VPR 处理
+            vpr_start = time.time()
             segments = omni_result["segments"]
             sentence = omni_result["sentence"]
             vad_start = float(vad_start)
             speaker_infos = self.vpr_model.handle(segments, wave_data, vad_start)
+            vpr_time = time.time() - vpr_start
             self.logger.info(f"speaker_infos speaker_infos={speaker_infos}")
 
             wordsSegs = [w for seg in segments for w in seg['wordsSeg']]
 
+            # ITN 处理
+            itn_start = time.time()
             final_text = ""
             for speaker_info in speaker_infos:
                 final_text = f"{final_text}{speaker_info['word']}"
             final_text = self.itn_actor.normalize(final_text)
+            itn_time = time.time() - itn_start
 
             if len(speaker_infos) == 0:
                 return None, ""
@@ -183,6 +206,19 @@ class SpeakerMainProcess:
                 "ed": speaker_infos[-1]["vadInfo"]["end_of_speech"] * 10,
                 "retType": "final"
             }
+
+            # 总耗时统计
+            overall_time = time.time() - overall_start
+            self.logger.info(
+                f"[SPEAKER_TIMING] total={overall_time:.3f}s | "
+                f"prepare={prepare_time:.3f}s | "
+                f"r2_omni={r2_time:.3f}s | "
+                f"r1_fa={r1_time:.3f}s | "
+                f"vpr={vpr_time:.3f}s | "
+                f"itn={itn_time:.3f}s | "
+                f"selected={'r2' if r2_ok else 'r1'}"
+            )
+
             self.logger.info(f"speaker_infos.result {result}")
             result = self.__make_result(result, vad_res, omni_result, is_omni=r2_ok)
             self.logger.info(f"speaker_infos speaker__make_result_post. deviceId = {self.deviceId} {result}")

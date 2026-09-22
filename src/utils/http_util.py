@@ -26,6 +26,11 @@ async def request_speaker_omni(
     start_time = time.time()
     request_id = str(uuid.uuid4())
     wave_b64 = base64.b64encode(data.tobytes()).decode('utf-8')
+
+    # 计算数据大小
+    audio_size_kb = len(data.tobytes()) / 1024
+    payload_size_kb = len(wave_b64) / 1024
+
     payload = {
         "data": wave_b64,
         "asr": asr,
@@ -33,6 +38,16 @@ async def request_speaker_omni(
         "session_id": session_id,
     }
     request_data, headers = build_mep_request(payload, config.speaker_omni_bid, config.speaker_omni_flowId)
+
+    # 计算完整请求大小
+    request_size_kb = len(json.dumps(request_data)) / 1024
+
+    logger.info(
+        f"[speaker_omni] Request size: audio={audio_size_kb:.2f}KB, "
+        f"base64={payload_size_kb:.2f}KB, "
+        f"total_request={request_size_kb:.2f}KB"
+    )
+
     result = await common_api_call_async(request_id, config.omni_address, headers, request_data, 5.0, semaphore, "speaker_omni")
     response_data = result.get("src", {}) if result else {}
     return response_data
@@ -50,6 +65,11 @@ async def request_qwen3_asr(
     """异步版本的 Qwen3 ASR 请求"""
     request_id = session_id
     wave_b64 = base64.b64encode(data.tobytes()).decode('utf-8')
+
+    # 计算数据大小
+    audio_size_kb = len(data.tobytes()) / 1024
+    payload_size_kb = len(wave_b64) / 1024
+
     payload = {
         "data": wave_b64,
         "session_id": session_id,
@@ -61,7 +81,18 @@ async def request_qwen3_asr(
 
     if enable_fa:
         payload["enable_fa"] = "true"
+
     request_data, headers = build_mep_request(payload, config.qwen3_asr_bid, config.qwen3_asr_flowId)
+
+    # 计算完整请求大小
+    request_size_kb = len(json.dumps(request_data)) / 1024
+
+    logger.info(
+        f"[{api_type}] Request size: audio={audio_size_kb:.2f}KB, "
+        f"base64={payload_size_kb:.2f}KB, "
+        f"total_request={request_size_kb:.2f}KB"
+    )
+
     result = await common_api_call_async(request_id, config.omni_address, headers, request_data, 5.0, semaphore, api_type)
     response_data = result.get("src", {}) if result else {}
     return response_data
