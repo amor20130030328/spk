@@ -104,6 +104,7 @@ class AsyncHttpClient:
         retry_times: int = 3,
         retry_delay: float = 0.1,
         semaphore: Optional[asyncio.Semaphore] = None,
+        api_type: str = "unknown",
     ) -> Optional[Dict[str, Any]]:
         """
         异步 POST 请求，支持重试和并发控制
@@ -116,6 +117,7 @@ class AsyncHttpClient:
             retry_times: 重试次数
             retry_delay: 重试间隔（秒）
             semaphore: 并发控制信号量（可选）
+            api_type: API类型标识（qwen3_asr, speaker_omni等）
 
         Returns:
             响应数据字典，失败返回 None
@@ -126,9 +128,9 @@ class AsyncHttpClient:
         # 使用信号量控制并发
         if semaphore:
             async with semaphore:
-                return await self._do_post(url, headers, data, timeout, retry_times, retry_delay)
+                return await self._do_post(url, headers, data, timeout, retry_times, retry_delay, api_type)
         else:
-            return await self._do_post(url, headers, data, timeout, retry_times, retry_delay)
+            return await self._do_post(url, headers, data, timeout, retry_times, retry_delay, api_type)
 
     async def _do_post(
         self,
@@ -138,6 +140,7 @@ class AsyncHttpClient:
         timeout: Optional[float],
         retry_times: int,
         retry_delay: float,
+        api_type: str = "unknown",
     ) -> Optional[Dict[str, Any]]:
         """实际执行 POST 请求的内部方法"""
         last_error = None
@@ -163,7 +166,7 @@ class AsyncHttpClient:
                 # 检查 HTTP 状态码
                 if response.status_code != 200:
                     logger.warning(
-                        f"HTTP {response.status_code} from {url}, "
+                        f"[{api_type}] HTTP {response.status_code}, "
                         f"latency={request_latency:.3f}s, "
                         f"attempt {attempt + 1}/{retry_times}"
                     )
@@ -181,7 +184,7 @@ class AsyncHttpClient:
 
                     # 记录成功的请求耗时
                     logger.info(
-                        f"[HTTP Success] url={url}, "
+                        f"[{api_type}] Success, "
                         f"latency={request_latency:.3f}s, "
                         f"total={total_latency:.3f}s, "
                         f"attempt={attempt + 1}"
@@ -193,7 +196,7 @@ class AsyncHttpClient:
                     return result['result']['content'][0]
                 else:
                     logger.warning(
-                        f"Business error from {url}: {result.get('result', {})}, "
+                        f"[{api_type}] Business error: {result.get('result', {})}, "
                         f"latency={request_latency:.3f}s"
                     )
                     return None
@@ -203,9 +206,9 @@ class AsyncHttpClient:
                 is_timeout = True
                 request_latency = time.time() - attempt_start
                 logger.warning(
-                    f"[HTTP Timeout] url={url}, "
+                    f"[{api_type}] Timeout, "
                     f"latency={request_latency:.3f}s, "
-                    f"attempt {attempt + 1}/{retry_times}: {e}"
+                    f"attempt {attempt + 1}/{retry_times}"
                 )
                 if attempt < retry_times - 1:
                     await asyncio.sleep(retry_delay * (attempt + 1))
@@ -214,7 +217,7 @@ class AsyncHttpClient:
                 last_error = e
                 request_latency = time.time() - attempt_start
                 logger.warning(
-                    f"[HTTP ConnectError] url={url}, "
+                    f"[{api_type}] ConnectError, "
                     f"latency={request_latency:.3f}s, "
                     f"attempt {attempt + 1}/{retry_times}: {e}"
                 )
@@ -243,7 +246,7 @@ class AsyncHttpClient:
             collector.record_request(url, total_latency, success=False, is_timeout=is_timeout)
 
         logger.error(
-            f"[HTTP Failed] url={url}, "
+            f"[{api_type}] Failed, "
             f"total_latency={total_latency:.3f}s, "
             f"attempts={retry_times}, "
             f"last_error={last_error}"

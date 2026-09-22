@@ -33,7 +33,7 @@ async def request_speaker_omni(
         "session_id": session_id,
     }
     request_data, headers = build_mep_request(payload, config.speaker_omni_bid, config.speaker_omni_flowId)
-    result = await common_api_call_async(request_id, config.omni_address, headers, request_data, 5.0, semaphore)
+    result = await common_api_call_async(request_id, config.omni_address, headers, request_data, 5.0, semaphore, "speaker_omni")
     response_data = result.get("src", {}) if result else {}
     return response_data
 
@@ -56,10 +56,13 @@ async def request_qwen3_asr(
         "prev_src": prev,
     }
 
+    # 标识接口类型
+    api_type = "qwen3_asr_fa" if enable_fa else "qwen3_asr"
+
     if enable_fa:
         payload["enable_fa"] = "true"
     request_data, headers = build_mep_request(payload, config.qwen3_asr_bid, config.qwen3_asr_flowId)
-    result = await common_api_call_async(request_id, config.omni_address, headers, request_data, 5.0, semaphore)
+    result = await common_api_call_async(request_id, config.omni_address, headers, request_data, 5.0, semaphore, api_type)
     response_data = result.get("src", {}) if result else {}
     return response_data
 
@@ -91,10 +94,20 @@ async def common_api_call_async(
         headers: dict,
         data: dict,
         timeout: float,
-        semaphore: asyncio.Semaphore = None
+        semaphore: asyncio.Semaphore = None,
+        api_type: str = "unknown"
 ) -> dict:
     """
     通用API调用函数（异步版本）
+
+    Args:
+        request_id: 请求ID
+        url: 请求URL
+        headers: 请求头
+        data: 请求数据
+        timeout: 超时时间
+        semaphore: 并发控制信号量
+        api_type: API类型标识（qwen3_asr, qwen3_asr_fa, speaker_omni等）
     """
     try:
         client = await get_http_client()
@@ -106,10 +119,11 @@ async def common_api_call_async(
             retry_times=2,
             retry_delay=0.1,
             semaphore=semaphore,
+            api_type=api_type,
         )
         return result if result else {}
     except Exception as e:
-        logger.error(f"API call failed for request_id={request_id}: {e}")
+        logger.error(f"[{api_type}] API call failed for request_id={request_id}: {e}")
         return {}
 
 
