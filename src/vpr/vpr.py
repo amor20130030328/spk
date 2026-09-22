@@ -269,7 +269,7 @@ class Vpr:
             return_attention_mask=False,
         )
         input_features = features.input_features.astype(np.float32)
-        self.logger.info(f"input_features cost_time: {et - st}")
+        self.logger.info(f"input_features cost_time: {time.time() - st}")
         return input_features
     
     # def _wav_to_input_features(self, data):
