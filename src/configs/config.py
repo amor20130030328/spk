@@ -47,7 +47,7 @@ def str_to_bool(s: str) -> bool:
 class Config:
     """全局配置类，用于集中管理所有可调参数"""
 
-    max_connections = 8
+    max_connections = 12
 
     ACTOR_RESET_TIMEOUT_S: Final[float] = 3.0
 
