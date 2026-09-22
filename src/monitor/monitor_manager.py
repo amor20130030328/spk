@@ -29,7 +29,7 @@ class MonitorManager:
         """保存字节数据到文件
         Args:
             data: 要保存的字节数据
-            file_name: 文件名（不包含路径）
+            audio_type: 音频类型（opus/pcm等）
             mode: 打开模式，默认 'ab'（二进制追加）
         Returns:
             bool: 保存是否成功
@@ -45,7 +45,7 @@ class MonitorManager:
             self.logger.info(f"数据已保存到 {file_path}")
             return True
         except Exception as e:
-            self.logger.error(f"保存文件失败 {file_name}: {e}")
+            self.logger.error(f"保存文件失败 {file_path}: {e}")
             return False
 
 
