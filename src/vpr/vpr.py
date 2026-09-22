@@ -455,7 +455,7 @@ class Vpr:
                 continue
 
             duration = end_s - start_s
-            self.logger.error(f"vad segment : {start_s} - {end_s} |{duration}: {text}")
+            self.logger.info(f"vad segment : {start_s} - {end_s} |{duration}: {text}")
             pure_text = re.sub(r"[^\u4e00-\u9fffA-Za-z0-9]", "", clean_text)
             pure_len = len(pure_text)
             if pure_text in TEXT_PROCESSOR.LEADING_FILLERS and duration > 0.8:
