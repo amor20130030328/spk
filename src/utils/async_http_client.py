@@ -149,10 +149,11 @@ class AsyncHttpClient:
             try:
                 request_timeout = timeout if timeout else 5.0
 
+                # 注意：使用 content 而不是 json，因为需要手动序列化来匹配原始实现
                 response = await self._client.post(
                     url,
                     headers=headers,
-                    json=data,
+                    content=json.dumps(data),
                     timeout=request_timeout,
                 )
 
