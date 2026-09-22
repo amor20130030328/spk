@@ -1,4 +1,5 @@
 import numpy as np
+import time
 from src.logger.logger_adapter import get_logger
 from src.vpr.vpr import Vpr
 import asyncio
